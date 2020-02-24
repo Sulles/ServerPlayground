@@ -3,11 +3,12 @@ Created: Feb. 15, 2020
 Updated:
 
 Author: Suleyman
+
 === DETAILS ===
 This file houses the client object responsible for establishing and passing data to the server
 """
 
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 
 import socket
 
