@@ -14,7 +14,7 @@ This file houses the following objects:
 Requires password to access gateway. Password cross-referenced by Gateway will be hashed version of string password
 Command:
     status: Display the status of:
-        #Default shows all    (-server, -sockets, -conns)
+        Default shows all    (-server, -sockets, -conns)
         -server     (backend server status)
         -sockets    (all socket statuses)
         -conns      (all connection statuses)
@@ -36,6 +36,15 @@ from threading import Thread
 from time import time, sleep
 
 from src.util import LogWorthy, kill_thread
+
+# ==================
+# TESTING PLAYGROUND
+hello = b'hello'
+ihello = int.from_bytes(hello, byteorder='big')
+bhello = bytes(ihello.to_bytes(length=len('hello'), byteorder='big'))
+
+
+# ==================
 
 """ =============== GENERAL UTILITY CLASSES AND FUNCTIONS =============== """
 
@@ -399,6 +408,9 @@ class ClientConnection(LogWorthy):
 
         self.log('Successfully finished initialization')
 
+    def panic(self):
+        self.panic_call_back(self.name)
+
     """ === PROCESS START/STOP === """
 
     def start(self):
@@ -409,10 +421,10 @@ class ClientConnection(LogWorthy):
         """
         self.is_running = True
 
-        self.listener = Thread(target=self.listen, args=(self, self.new_data.put_nowait, self.panic_call_back))
+        self.listener = Thread(target=self.listen, args=(self, self.new_data.put_nowait, self.panic))
         self.listener.start()
 
-        self.processor = Thread(target=self.process_data, args=(self, self.new_data.get_nowait, self.panic_call_back,
+        self.processor = Thread(target=self.process_data, args=(self, self.new_data.get_nowait, self.panic,
                                                                 self.response_data.put_nowait))
         self.processor.start()
 
@@ -466,7 +478,7 @@ class ClientConnection(LogWorthy):
                             if empty_data_counter >= 5:
                                 empty_data_counter = -1
                                 # Got empty data too many times!
-                                panic(this.name)
+                                panic()
                         else:
                             # Reset empty data counter
                             empty_data_counter = 0
@@ -474,7 +486,7 @@ class ClientConnection(LogWorthy):
                             call_back(data)
                     except AssertionError:
                         this.log(f'New data queue may have been closed! Lost data: {data}')
-                        panic(this.name)
+                        panic()
                     except Full:
                         this.log('Got new data queue overflow! Self-terminating!')
                         exit()
@@ -510,10 +522,10 @@ class ClientConnection(LogWorthy):
                             this.handle_insecure_data(this, data, send_response, panic)
                     except AssertionError:
                         this.log(f'Response queue may have been closed! Lost data: {data}')
-                        panic(this.name)
+                        panic()
                     except Full:
                         this.log('Got response data queue overflow! Self-terminating!')
-                        panic(this.name)
+                        panic()
                 except Empty:
                     this.log('Got no data, sleeping')
                     sleep(1)
@@ -528,7 +540,7 @@ class ClientConnection(LogWorthy):
         for exit_call in ['exit', 'kill', 'leave', 'quit', 'stop']:
             if exit_call in data.lower():
                 this.log(f'Received insecure request to terminate client connection with command {exit_call}')
-                panic(this.name)
+                panic()
 
         # Handle internal requests
         if data in this.insecure_request_lookup.keys():
@@ -574,7 +586,7 @@ class ClientConnection(LogWorthy):
         # Handle kill request
         if [_ in data.lower() for _ in ['exit', 'kill', 'leave', 'quit', 'stop']]:
             this.log('Received secure request to terminate client connection')
-            return panic(this.name)
+            return panic()
 
         # Handle all other scenarios
         request_id = randint(0, 255)
@@ -654,11 +666,11 @@ class ClientConnection(LogWorthy):
                         this.is_admin = True
                         send_response(f'Hello Suleyman! Admin privileges granted to client connection at '
                                       f'{this.ip_address}:{this.ip_port}')
-                        break
+                        return
                     else:
                         this.is_admin = False
                         send_response('Login failed')
-                        break
+                        return
                 else:
                     backlog_responses.append(response)
             except Empty:
@@ -667,6 +679,35 @@ class ClientConnection(LogWorthy):
                     INSECURE_SEND_RESPONSE(backlog)
                 this.log('Waiting 1 second for login verification')
                 sleep(1)
+        panic()
+
+    @staticmethod
+    def handle_auth_challenge_request(this, challenge_request_data, send_response, panic):
+        """
+        When a client connection wants to be authorized, it will first request a server authentication challenge. Pass
+        this data to server as an insecure request
+        """
+        this.log(f'Sending server insecure request for auth challenge')
+        request_id = randint(0, 255)
+        INSECURE_MAKE_REQUEST(dict(id=request_id, command='auth_challenge', args=[challenge_request_data]))
+        timeout = time() + this.global_request_timeout + 5
+        while time() < timeout:
+            backlog_responses = list()
+            try:
+                response = INSECURE_GET_NEXT_RESPONSE()
+                if type(response) is dict and response['id'] == request_id:
+                    this.log(f'Got response: {response}')
+                    send_response(response['response'])
+                    return
+                else:
+                    backlog_responses.append(response)
+            except Empty:
+                # Send all backlog responses that did not match with what we expected
+                for backlog in backlog_responses:
+                    INSECURE_SEND_RESPONSE(backlog)
+                this.log('Waiting 1 second for login verification')
+                sleep(1)
+        panic()
 
     """ === GETTERS === """
 
@@ -714,13 +755,16 @@ class Server(LogWorthy):
         self.log_file = log_file
         LogWorthy.__init__(self, log_file)
 
-        # Security
+        # Security - Admin password
         self.admin_password = None
         with open('.pwd', 'r') as pwd_file:
             try:
                 self.admin_password = pwd_file.readline()
             except Exception as e:
                 self.log(f'CRITICAL ERROR -1: Could not read admin password!\n{e}')
+
+        # Security - Session RSA keys
+
 
         # SQL
         self.sql = None
@@ -743,7 +787,8 @@ class Server(LogWorthy):
         self.request_refresh = 0.5   # frequency that request handler checks if a new insecure request exists
         self.request_sleep = 1  # frequency that request handler checks if it should be running
         self.insecure_request_lookup = dict(
-            verify_admin_pwd=self.verify_admin_password
+            verify_admin_pwd=self.verify_admin_password,
+            auth_challenge=self.handle_auth_challenge
         )
         self.request_handler = None
         self.start_request_handler()
@@ -829,6 +874,24 @@ class Server(LogWorthy):
         except TypeError:
             this.log('Failed to execute ')
 
+    """ === REQUEST METHODS === """
+
+    def verify_admin_password(self, args):
+        """ Verify that the provided password is an admin password """
+        self.log('Verifying password provided matches admin password...')
+        provided_password = args[0]
+        salt = self.admin_password[:64]
+        stored_password = self.admin_password[64:]
+        pwdhash = hashlib.pbkdf2_hmac('sha512', provided_password.encode('utf-8'), salt.encode('ascii'), 100000)
+        pwdhash = binascii.hexlify(pwdhash).decode('ascii')
+        success = pwdhash == stored_password
+        self.log(f'Does password match?: {success}')
+        return success
+
+    def handle_auth_challenge(self, args):
+        """ Start authorization challenge """
+        self.log(f'Received authorization challenge: {args}')
+
     """ === HANDLERS === """
 
     def handle_new_connection(self, new_connection, ip_address, ip_port):
@@ -870,17 +933,6 @@ class Server(LogWorthy):
         except AttributeError:
             self.log(f'Connection watcher is not an active thread! Is type: {type(self.connection_watcher)}')
             return False
-
-    def verify_admin_password(self, provided_password):
-        """ Verify that the provided password is an admin password """
-        self.log('Verifying password provided matches admin password...')
-        salt = self.admin_password[:64]
-        stored_password = self.admin_password[64:]
-        pwdhash = hashlib.pbkdf2_hmac('sha512', provided_password.encode('utf-8'), salt.encode('ascii'), 100000)
-        pwdhash = binascii.hexlify(pwdhash).decode('ascii')
-        success = pwdhash == stored_password
-        self.log(f'Does password match?: {success}')
-        return success
 
     """ === SETTERS === """
 
