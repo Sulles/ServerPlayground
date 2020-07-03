@@ -2,13 +2,12 @@
 Main file that should be called to run the server.
 """
 
-from src import server
-
+from src.server.Gateway import Gateway
 
 if __name__ == "__main__":
     print('Start')
 
-    gateway = server.Gateway()
+    gateway = Gateway()
     gateway.start()
     # TODO: Remove timeout time to run indefinitely
     gateway.main(timeout=30)

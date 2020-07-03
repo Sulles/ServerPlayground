@@ -1,0 +1,174 @@
+"""
+=== Gateway ===
+Requires password to access gateway. Password cross-referenced by Gateway will be hashed version of string password
+Command:
+    status: Display the status of:
+        Default shows all    (-server, -sockets, -conns)
+        -server     (backend server status)
+        -sockets    (all socket statuses)
+        -conns      (all connection statuses)
+    start: Start the server
+    kill: Kill the server
+    restart: Kill then start the server
+"""
+
+from queue import Empty
+from time import time, sleep
+
+from src.lib.util import *
+from . import SECURE_GET_NEXT_REQUEST, SECURE_SEND_RESPONSE, SECURE_MAKE_REQUEST
+from .Server import Server
+from .SocketThread import SocketThread
+
+
+class Gateway(LogWorthy):
+    """
+    =============== COMMUNICATIONS GATEWAY ===============
+    Gateway object is the gateway between the socket connection and all other Server-side components
+    Gateway is responsible for:
+        - Creating socket connection point to server IP address
+        - Sending all new socket connections to Server for handling
+        - Master clean-up organizer, all components should be able to be cleaned up through gateway cleanup
+    TODO: Make a global queue watcher that removes unhandled data from the queue
+    """
+
+    def __init__(self, log_file=None):
+        """
+        Initializer for Gateway interface. Is responsible for:
+            - Establishing socket connection to ip address
+            - Starting connection_thread which will add new connections to the connection_queue as they appear
+            - Starting the backend data processing object
+        """
+        # General
+        LogWorthy.__init__(self, log_file)
+        self.name = 'Gateway'
+        self.is_running = True
+        self.connection_backlog_size = 5
+        self.socket_timeout = 0.1
+
+        # IP constants
+        self.ip_address = '127.0.0.1'
+        self.ip_port = 8888
+
+        # Threading
+        self.connection_queue = Queue(self.connection_backlog_size)
+        self.socket_thread = SocketThread(log_file, self.connection_queue.put_nowait)
+        self.log('Socket initialized')
+
+        # Server
+        self.server = Server()
+        self.log('Server initialized')
+
+        # CLI connection
+        self.cli_connection = None
+        self.secure_request_lookup = dict(
+            gateway_stop_listener=self.stop,
+            gateway_start_listener=self.start,
+            gateway_restart_listener=self.socket_thread.restart,
+            status=self.get_status,
+            gateway_status=self.get_status,
+            server_status=self.get_server_status,
+            server_kill_connection=self.server.kill_connection,
+            server_kill_all_connections=self.server.kill_all_connections,
+            server_kill_all_connections_except_me=self.server.kill_all_connections_except_me,
+            server_kill_watchdog=self.server.kill_watchdog_thread,
+            server_start_watchdog=self.server.start_watchdog,
+            server_restart_watchdog=self.server.restart_watchdog_thread
+        )
+
+    """ === LISTENER START/STOP === """
+
+    def start(self):
+        self.socket_thread.start()
+
+    def stop(self):
+        self.socket_thread.stop()
+
+    """ === MAIN === """
+
+    def main(self, timeout=None):
+        """
+        Main runner method of the Gateway, is responsible for:
+            - Monitoring connection_queue for new connections and triaging them to CLI or Server
+            - Monitoring response_callback for new responses to send
+            - Handling CLI data requests
+        """
+        if timeout is not None:
+            self.log(f'Starting timed main loop for {timeout} seconds')
+            end_time = time() + timeout
+        else:
+            self.log('Starting infinite main loop!')
+            end_time = -1
+
+        while time() < end_time:
+            # Try and get a new connection
+            try:
+                (connection, (ip, port)) = self.connection_queue.get(block=False)
+                self.log(f'Got new connection at {ip}:{port}')
+                self.server.handle_new_connection(connection, ip, port)
+            except Empty:
+                pass
+            except Exception as e:
+                self.log('CRITICAL ERROR 1: Failed to get new connection from connection_queue!')
+                raise e
+
+            # Check global request queue
+            try:
+                request = SECURE_GET_NEXT_REQUEST()
+                self.log(f'Found secure request in the global queue: {request}')
+                self.handle_secure_request(request)
+            except Empty:
+                pass
+
+            # self.log('Sleeping for a hot second')
+            self.log('.')
+            sleep(1)
+
+    """ === HANDLERS === """
+
+    def handle_secure_request(self, request):
+        if type(request) is dict and request['command'] in self.secure_request_lookup.keys():
+            try:
+                if 'args' in request.keys():
+                    response = self.secure_request_lookup[request['command']](request['args'])
+                else:
+                    response = self.secure_request_lookup[request['command']]()
+                SECURE_SEND_RESPONSE(dict(response=response, id=request['id']))
+            except TypeError:
+                self.log('Failed to execute ')
+        else:
+            # If command is not in request lookup, put back in queue
+            SECURE_MAKE_REQUEST(request)
+
+    """ === GETTERS === """
+
+    def get_status(self):
+        status = f'===== GATEWAY STATUS =====\n' \
+                 f'Listener Thread is {"alive" if self.socket_thread.is_functional() else "dead!"}\n' \
+                 f'{self.server.get_num_connections()} Active Client Connections'
+        return status
+
+    def get_server_status(self):
+        return self.server.get_status()
+
+    """ === SETTERS === """
+
+    """ === MISC === """
+
+    def log(self, log):
+        self._log(f'[{self.name}] {log}')
+
+    """ === CLEANUP === """
+
+    def cleanup(self):
+        """
+        Clean-up method will:
+            - Gracefully close connection_thread
+            - Remove all queued tasks in connection_queue
+            - Wait for return on clean-up call for all active connection processes
+            - Verify connection_thread is closed and connection_queue is empty
+        """
+        self.log('Cleanup Beginning')
+        self.stop()
+        self.server.cleanup()
+        self.log('Cleanup End')
