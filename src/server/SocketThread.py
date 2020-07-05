@@ -1,20 +1,20 @@
-import socket
-from threading import Thread
-from time import sleep
+"""
+=============== SERVER SOCKET THREAD ===============
+SocketThread runs a listener thread that constantly monitors the server's socket for new connections.
+It is responsible for:
+    - Starting/Stopping listening thread
+    - Pausing/Resuming listening thread
+    - Adding new connections to the call_back (here a Queue)
+"""
 
-from src.lib.util import LogWorthy, kill_thread
+import socket
+
+from src.lib.util import LogWorthy, kill_thread, lockable
+from . import Thread, sleep
+from .. import RLock
 
 
 class SocketThread(LogWorthy):
-    """
-    =============== MAIN SERVER SOCKET THREAD ===============
-    SocketThread runs a listener thread that constantly monitors the server's socket for new connections.
-    It is responsible for:
-        - Starting/Stopping listening thread
-        - Pausing/Resuming listening thread
-        - Adding new connections to the call_back (here a Queue)
-    """
-
     def __init__(self, log_file, call_back):
         """
         Initializer for SocketThread object
@@ -22,11 +22,12 @@ class SocketThread(LogWorthy):
         :param call_back: call back function, here Queue.put_nowait
         """
         # General
-        self.name = 'SocketThread'
         LogWorthy.__init__(self, log_file)
+        self.name = 'SocketThread'
+        self.lock = RLock()
 
         # IP constants
-        self.ip_address = '127.0.0.1'
+        self.ip_address = ''
         self.ip_port = 8888
 
         # TCP socket
@@ -74,11 +75,16 @@ class SocketThread(LogWorthy):
         self.log('Socket closed')
         return None
 
-    def restart(self):
+    @lockable
+    def restart(self, data: dict = None):
         """ This method will kill then restart the listener thread """
         self.stop()
         self.start()
-        return None
+        if data is not None:
+            data['response'] = f'{self.name} restarted'
+            return data
+        else:
+            return None
 
     """ === PROCESS PAUSE/RESUME === """
 
@@ -136,6 +142,9 @@ class SocketThread(LogWorthy):
 
     def log(self, log):
         self._log(f'[{self.name}] {log}')
+
+    def debug(self, log):
+        self._debug(f'[{self.name}] {log}')
 
     """ === CLEANUP ==== """
 

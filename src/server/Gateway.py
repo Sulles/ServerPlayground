@@ -1,5 +1,5 @@
 """
-=== Gateway ===
+=============== GATEWAY ===============
 Requires password to access gateway. Password cross-referenced by Gateway will be hashed version of string password
 Command:
     status: Display the status of:
@@ -13,12 +13,12 @@ Command:
 """
 
 from queue import Empty
-from time import time, sleep
 
 from src.lib.util import *
-from . import SECURE_GET_NEXT_REQUEST, SECURE_SEND_RESPONSE, SECURE_MAKE_REQUEST
+from . import time
 from .Server import Server
 from .SocketThread import SocketThread
+from .. import Queue, SECURE_SERVICE, INSECURE_SERVICE, RLock
 
 
 class Gateway(LogWorthy):
@@ -45,9 +45,10 @@ class Gateway(LogWorthy):
         self.is_running = True
         self.connection_backlog_size = 5
         self.socket_timeout = 0.1
+        self.lock = RLock()
 
         # IP constants
-        self.ip_address = '127.0.0.1'
+        self.ip_address = ''
         self.ip_port = 8888
 
         # Threading
@@ -61,28 +62,38 @@ class Gateway(LogWorthy):
 
         # CLI connection
         self.cli_connection = None
-        self.secure_request_lookup = dict(
-            gateway_stop_listener=self.stop,
-            gateway_start_listener=self.start,
-            gateway_restart_listener=self.socket_thread.restart,
-            status=self.get_status,
-            gateway_status=self.get_status,
-            server_status=self.get_server_status,
-            server_kill_connection=self.server.kill_connection,
-            server_kill_all_connections=self.server.kill_all_connections,
-            server_kill_all_connections_except_me=self.server.kill_all_connections_except_me,
-            server_kill_watchdog=self.server.kill_watchdog_thread,
-            server_start_watchdog=self.server.start_watchdog,
-            server_restart_watchdog=self.server.restart_watchdog_thread
-        )
+        # Secure Service
+        SECURE_SERVICE.register_service('gateway_stop_listener', self.stop_socket_thread)
+        SECURE_SERVICE.register_service('gateway_start_listener', self.start_socket_thread)
+        SECURE_SERVICE.register_service('gateway_restart_listener', self.socket_thread.restart)
+        SECURE_SERVICE.register_service('gateway_status', self.get_status)
+        SECURE_SERVICE.register_service('server_status', self.get_server_status)
+        SECURE_SERVICE.register_service('server_kill_connection', self.server.kill_connection)
+        SECURE_SERVICE.register_service('server_kill_all_connections', self.server.kill_all_connections)
+        SECURE_SERVICE.register_service('server_kill_all_connections_except_me',
+                                        self.server.kill_all_connections_except_me)
+        SECURE_SERVICE.register_service('server_kill_watchdog', self.server.kill_watchdog_thread)
+        SECURE_SERVICE.register_service('server_start_watchdog', self.server.start_watchdog)
+        SECURE_SERVICE.register_service('server_restart_watchdog', self.server.restart_watchdog_thread)
+        SECURE_SERVICE.register_service('num_of_connections', self.server.get_num_connections)
+        # Insecure Service
+        INSECURE_SERVICE.register_service('num_of_connections', self.server.get_num_connections)
 
     """ === LISTENER START/STOP === """
 
-    def start(self):
+    @lockable
+    def start_socket_thread(self, data: dict = None):
         self.socket_thread.start()
+        if data is not None:
+            data['response'] = 'Started socket thread'
+            return data
 
-    def stop(self):
+    @lockable
+    def stop_socket_thread(self, data: dict = None):
         self.socket_thread.stop()
+        if data is not None:
+            data['response'] = 'Stopped socket thread'
+            return data
 
     """ === MAIN === """
 
@@ -93,17 +104,19 @@ class Gateway(LogWorthy):
             - Monitoring response_callback for new responses to send
             - Handling CLI data requests
         """
+        end_time = -1
+        infinite = False
         if timeout is not None:
             self.log(f'Starting timed main loop for {timeout} seconds')
             end_time = time() + timeout
         else:
             self.log('Starting infinite main loop!')
-            end_time = -1
+            infinite = True
 
-        while time() < end_time:
+        while time() < end_time or infinite:
             # Try and get a new connection
             try:
-                (connection, (ip, port)) = self.connection_queue.get(block=False)
+                (connection, (ip, port)) = self.connection_queue.get(timeout=1)
                 self.log(f'Got new connection at {ip}:{port}')
                 self.server.handle_new_connection(connection, ip, port)
             except Empty:
@@ -112,44 +125,38 @@ class Gateway(LogWorthy):
                 self.log('CRITICAL ERROR 1: Failed to get new connection from connection_queue!')
                 raise e
 
-            # Check global request queue
-            try:
-                request = SECURE_GET_NEXT_REQUEST()
-                self.log(f'Found secure request in the global queue: {request}')
-                self.handle_secure_request(request)
-            except Empty:
-                pass
+            # # Check global request queue
+            # try:
+            #     request = SECURE_GET_NEXT_REQUEST()
+            #     self.log(f'Found secure request in the global queue: {request}')
+            #     self.handle_secure_request(request)
+            # except Empty:
+            #     pass
 
             # self.log('Sleeping for a hot second')
             self.log('.')
-            sleep(1)
-
-    """ === HANDLERS === """
-
-    def handle_secure_request(self, request):
-        if type(request) is dict and request['command'] in self.secure_request_lookup.keys():
-            try:
-                if 'args' in request.keys():
-                    response = self.secure_request_lookup[request['command']](request['args'])
-                else:
-                    response = self.secure_request_lookup[request['command']]()
-                SECURE_SEND_RESPONSE(dict(response=response, id=request['id']))
-            except TypeError:
-                self.log('Failed to execute ')
-        else:
-            # If command is not in request lookup, put back in queue
-            SECURE_MAKE_REQUEST(request)
 
     """ === GETTERS === """
 
-    def get_status(self):
+    @lockable
+    def get_status(self, data: dict = None):
         status = f'===== GATEWAY STATUS =====\n' \
                  f'Listener Thread is {"alive" if self.socket_thread.is_functional() else "dead!"}\n' \
                  f'{self.server.get_num_connections()} Active Client Connections'
-        return status
+        if data is not None:
+            data['response'] = status
+            return data
+        else:
+            return status
 
-    def get_server_status(self):
-        return self.server.get_status()
+    @lockable
+    def get_server_status(self, data: dict = None):
+        status = self.server.get_status()
+        if data is not None:
+            data['response'] = status
+            return data
+        else:
+            return status
 
     """ === SETTERS === """
 
@@ -157,6 +164,9 @@ class Gateway(LogWorthy):
 
     def log(self, log):
         self._log(f'[{self.name}] {log}')
+
+    def debug(self, log):
+        self._debug(f'[{self.name}] {log}')
 
     """ === CLEANUP === """
 
@@ -169,6 +179,6 @@ class Gateway(LogWorthy):
             - Verify connection_thread is closed and connection_queue is empty
         """
         self.log('Cleanup Beginning')
-        self.stop()
+        self.stop_socket_thread()
         self.server.cleanup()
         self.log('Cleanup End')

@@ -8,10 +8,17 @@ if __name__ == "__main__":
     print('Start')
 
     gateway = Gateway()
-    gateway.start()
-    # TODO: Remove timeout time to run indefinitely
-    gateway.main(timeout=30)
-    gateway.cleanup()
+    try:
+        gateway.start_socket_thread()
+        # TODO: Remove timeout time to run indefinitely
+        # gateway.main(timeout=30)
+        gateway.main()
 
-    print('Fin')
-    exit()
+    except KeyboardInterrupt:
+        print('--- Keyboard interrupt detected, stopping server ---')
+
+    finally:
+        gateway.cleanup()
+
+        print('Fin')
+        exit()

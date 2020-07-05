@@ -1,13 +1,12 @@
 import os
 import sys
 
+# noinspection PyUnresolvedReferences
+from multiprocessing import Queue, RLock
+
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
-""" =============== GENERAL UTILITY CLASSES AND FUNCTIONS =============== """
-
-MAX_QUEUE_SIZE = 5
-
-from .lib.util import SecureService, InsecureService
+from .lib.Service import SecureService, InsecureService
 
 SECURE_SERVICE = SecureService()
 INSECURE_SERVICE = InsecureService()
