@@ -87,6 +87,8 @@ class ClientConnection(LogWorthy):
         # Register services
         SECURE_SERVICE.register_service(f'authorize_{self.name}', self.make_admin)
 
+        self.response_data.put_nowait('Welcome to the Playground!')
+
     def stop(self):
         """
         Stopper method is responsible for:
@@ -160,7 +162,7 @@ class ClientConnection(LogWorthy):
                     sleep(1)
                 except Exception as e:
                     this.log('Got error while getting data from client!')
-                    raise e
+                    this.log(e)
 
     @staticmethod
     def process_data(this, get_new_data, panic, send_response):
@@ -200,7 +202,8 @@ class ClientConnection(LogWorthy):
                     exit(0)
                 except Exception as e:
                     this.log('Got error while processing user data!')
-                    raise e
+                    this.log(e)
+                    send_response('ERROR CC_3.0: Unknown Error')
 
     @staticmethod
     def build_data(this, raw_data):
@@ -253,8 +256,12 @@ class ClientConnection(LogWorthy):
         # Handle all other scenarios
         response = SECURE_SERVICE.handle(data)
         this.debug(f'Processed data, got: {response}')
-        this.log(f'Sending response: {response["response"]}')
-        send_response(response["response"])
+        try:
+            send_response(response["response"])
+        except ValueError:
+            send_response("ERROR CC_1: Internal response data invalid")
+        except Exception as e:
+            this.log(f'ERROR CC_2: Unexpected transmission error: {e}')
 
     @staticmethod
     def respond(this, next_response):
@@ -266,13 +273,14 @@ class ClientConnection(LogWorthy):
                         response = str(response)
                     this.debug(f'Trying to send response: {response}')
                     [this.connection.sendall(str(r + '\r\n').encode('utf-8')) for r in response.splitlines()]
+                    this.connection.sendall(str('>> ').encode('utf-8'))
                 except Empty:
                     pass
                 except OSError:
                     this.log('Socket connection has been closed!')
                 except Exception as e:
                     this.log('Got error while trying to transmit data')
-                    raise e
+                    this.log(e)
 
     """ === SERVICES === """
 
