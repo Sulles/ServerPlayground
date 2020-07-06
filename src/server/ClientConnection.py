@@ -49,7 +49,6 @@ class ClientConnection(LogWorthy):
         self.processor = None
         self.response_data = Queue(MAX_QUEUE_SIZE)
         self.responder = None
-        self.stop_me = False
 
         # Client request handling
         self.global_request_timeout = 4
@@ -58,6 +57,7 @@ class ClientConnection(LogWorthy):
         # Security
         self.is_secure = False  # If the client is using symmetric key encryption
         self.is_admin = False  # Client is using symmetric key encryption and has provided an admin password
+        self.client_timeout = 60 * 30     # 30 min timeout (in sec)
 
         self.log('Successfully finished initialization')
 
@@ -124,6 +124,7 @@ class ClientConnection(LogWorthy):
         :param panic: Reference to kill queue monitored by Server watchdog
         """
         empty_data_counter = 0
+        timeout_counter = 0
         while not this.kill_thread:
             if this.is_alive:
                 try:
@@ -140,28 +141,28 @@ class ClientConnection(LogWorthy):
                                 panic()
                                 sleep(1)
                         else:
-                            # Reset empty data counter on valid data
-                            empty_data_counter = 0
+                            empty_data_counter = 0  # Reset empty data counter on valid data
+                            timeout_counter = 0     # Reset timeout counter on valid data
                             this.debug(f'Got data: {data}')
                             process(data)
-                            # response(call_back(data))
                     except AssertionError:
-                        this.log(f'New data queue may have been closed! Lost data: {data}')
-                        panic()
+                        panic(f'{this.name} possible data corruption, self-terminating')
+                        sleep(1)
                     except Full:
-                        this.log('Got new data queue overflow! Self-terminating!')
-                        panic()
+                        panic(f'{this.name} data overflow, self-terminating')
                         sleep(1)
                 except socket.timeout:
                     # this.log('Socket timed out waiting to receive new data')
+                    timeout_counter += 1    # socket times out every 0.5s
+                    if timeout_counter * 0.5 > this.client_timeout:
+                        panic(f'{this.name} timeout reached, self-terminating')
+                        sleep(1)
                     pass
                 except ConnectionResetError:
-                    this.log('Client terminated connection, shutting down...')
-                    panic()
+                    panic(f'User at {this.name} terminated connection, shutting down...')
                     sleep(1)
                 except Exception as e:
-                    this.log('Got error while getting data from client!')
-                    this.log(e)
+                    this.log(f'Got error while getting data from client!\n{e}')
 
     @staticmethod
     def process_data(this, get_new_data, panic, send_response):
@@ -181,19 +182,18 @@ class ClientConnection(LogWorthy):
                     data = this.build_data(this, raw_data)
                     try:
                         if data['request'] == "GET":
-                            this.log(f'POTENTIAL HTTP USER GOT RAW DATA: {raw_data}')
-                            panic('GOT "GET" REQUEST, POTENTIAL UNAUTHORIZED USER')
+                            panic(f'{this.name} SENT "GET" REQUEST, POTENTIAL UNAUTHORIZED USER, self-terminating')
                             sleep(1)
                         elif this.is_secure or this.is_admin:
                             this.handle_secure_data(this, data, send_response, panic)
                         else:
                             this.handle_insecure_data(this, data, send_response, panic)
                     except AssertionError:
-                        this.log(f'Response queue may have been closed! Lost data: {data}')
-                        panic()
+                        panic(f'{this.name} Response queue may have been closed! Lost data: {data}. Self-terminating')
+                        sleep(1)
                     except Full:
-                        this.log('Got response data queue overflow! Self-terminating!')
-                        panic()
+                        panic(f'{this.name} Response data queue overflow! Self-terminating')
+                        sleep(1)
                 except Empty:
                     # this.log('Got no data, passing')
                     pass

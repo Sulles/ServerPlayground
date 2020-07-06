@@ -158,6 +158,7 @@ class Server(LogWorthy):
         self.all_client_connections.append(
             ClientConnection(new_connection, ip_address, ip_port, self.panic_queue.put_nowait, self.log_file))
         self.all_client_connections[-1].start()
+        sleep(0.1)  # Allow ClientConnection 0.1s to start and register services correctly
 
     """ === GETTERS === """
 
