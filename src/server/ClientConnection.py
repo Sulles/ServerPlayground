@@ -135,7 +135,7 @@ class ClientConnection(LogWorthy):
                             sleep(1)
                         elif data == '':
                             empty_data_counter += 1
-                            this.log('Got empty data!')
+                            this.debug('Got empty data!')
                             if empty_data_counter >= 5:
                                 empty_data_counter = -1
                                 # Got empty data too many times!
@@ -143,7 +143,7 @@ class ClientConnection(LogWorthy):
                         else:
                             # Reset empty data counter
                             empty_data_counter = 0
-                            this.log(f'Got data: {data}')
+                            this.debug(f'Got data: {data}')
                             process(data)
                             # response(call_back(data))
                     except AssertionError:
@@ -230,7 +230,7 @@ class ClientConnection(LogWorthy):
 
     @staticmethod
     def handle_insecure_data(this, data, send_response, panic):
-        this.log(f'Insecurely processing {data}')
+        this.debug(f'Insecurely processing {data}')
         # Handle kill request
         if this.handle_exit(this, data['request'], send_response, panic):
             sleep(1)
@@ -248,7 +248,7 @@ class ClientConnection(LogWorthy):
 
     @staticmethod
     def handle_secure_data(this, data, send_response, panic):
-        this.log(f'Securely processing {data}')
+        this.debug(f'Securely processing {data}')
         # Handle kill request
         if this.handle_exit(this, data['request'], send_response, panic):
             return

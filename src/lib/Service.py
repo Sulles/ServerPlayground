@@ -153,7 +153,7 @@ class SecureService(Service):
         if data is None or type(data) is not dict:
             self.log(f'Invalid service data, got: {data} of type: {type(data)}')
             return
-        self.log(f'Handling {data}')
+        self.debug(f'Handling {data}')
         return self._handle(data)
         # if ' ' in data:
         #     request_type, request_data = data.split(' ', 1)
@@ -177,7 +177,7 @@ class InsecureService(Service):
         if data is None or type(data) is not dict:
             self.log(f'Invalid service data, got: {data} of type: {type(data)}')
             return
-        self.log(f'Handling {data}')
+        self.debug(f'Handling {data}')
         return self._handle(data)
         # if ' ' in data:
         #     request_type, request_data = data.split(' ', 1)
