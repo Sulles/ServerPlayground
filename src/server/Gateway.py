@@ -117,21 +117,18 @@ class Gateway(LogWorthy):
             # Try and get a new connection
             try:
                 (connection, (ip, port)) = self.connection_queue.get(timeout=600)
-                self.log(f'Got new connection at {ip}:{port}')
-                self.server.handle_new_connection(connection, ip, port)
+                if self.server.get_num_connections() < 10:
+                    self.log(f'Got new connection at {ip}:{port}')
+                    self.server.handle_new_connection(connection, ip, port)
+                else:
+                    connection.close()
+                    self.log(f'SERVER FULL: New connection at {ip}:{port} could not be established and was closed')
             except Empty:
                 pass
             except Exception as e:
                 self.log('CRITICAL ERROR 1: Failed to get new connection from connection_queue!')
+                self.log(e)
                 raise e
-
-            # # Check global request queue
-            # try:
-            #     request = SECURE_GET_NEXT_REQUEST()
-            #     self.log(f'Found secure request in the global queue: {request}')
-            #     self.handle_secure_request(request)
-            # except Empty:
-            #     pass
 
             # self.log('Sleeping for a hot second')
             self.log('.')

@@ -61,8 +61,8 @@ class ClientConnection(LogWorthy):
 
         self.log('Successfully finished initialization')
 
-    def panic(self):
-        self.panic_call_back(self.name)
+    def panic(self, panic_info=None):
+        self.panic_call_back((self.name, panic_info))
 
     """ === PROCESS START/STOP === """
 
@@ -131,17 +131,16 @@ class ClientConnection(LogWorthy):
                     # String cast for security, don't want to evaluate anything sent by a client, TODO: verify this...
                     data = str(this.connection.recv(4096).decode('utf-8')).replace('\r\n', '')
                     try:
-                        if empty_data_counter == -1:
-                            sleep(1)
-                        elif data == '':
+                        if data == '':
                             empty_data_counter += 1
                             this.debug('Got empty data!')
                             if empty_data_counter >= 5:
                                 empty_data_counter = -1
                                 # Got empty data too many times!
                                 panic()
+                                sleep(1)
                         else:
-                            # Reset empty data counter
+                            # Reset empty data counter on valid data
                             empty_data_counter = 0
                             this.debug(f'Got data: {data}')
                             process(data)
@@ -181,10 +180,11 @@ class ClientConnection(LogWorthy):
                     this.log(f'Processing raw data: {raw_data}')
                     data = this.build_data(this, raw_data)
                     try:
-                        # if this.expected_data_pipe is not None:
-                        #     this.log(f'Sending data to expected data pipe: {this.expected_data_pipe}')
-                        #     this.expected_data_pipe(this, data, send_response, panic)
-                        if this.is_secure or this.is_admin:
+                        if data['request'] == "GET":
+                            this.log(f'POTENTIAL HTTP USER GOT RAW DATA: {raw_data}')
+                            panic('GOT "GET" REQUEST, POTENTIAL UNAUTHORIZED USER')
+                            sleep(1)
+                        elif this.is_secure or this.is_admin:
                             this.handle_secure_data(this, data, send_response, panic)
                         else:
                             this.handle_insecure_data(this, data, send_response, panic)

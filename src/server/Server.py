@@ -93,9 +93,11 @@ class Server(LogWorthy):
         while not this.kill_watchdog:
             if this.watchdog_is_alive:
                 try:
-                    kill_name = get_next_panic(timeout=1)
+                    kill_name, panic_info = get_next_panic(timeout=1)
                     kill_id = None
                     this.log('Got kill request!')
+                    if panic_info is not None:
+                        this.log(f'GOT PANIC INFO: {panic_info}')
                     for conn in this.all_client_connections:
                         if conn.name == kill_name:
                             kill_id = this.all_client_connections.index(conn)
@@ -103,7 +105,7 @@ class Server(LogWorthy):
                             this.log(f'Successfully killed {conn.name}!')
                     if kill_id is not None:
                         this.all_client_connections.pop(kill_id)
-                        this.log(f'Removed {kill_name} from all client connections')
+                        this.debug(f'Removed {kill_name} from all client connections')
                 except Empty:
                     pass
                 except AttributeError as e:
@@ -173,9 +175,9 @@ class Server(LogWorthy):
 
     @lockable
     def get_num_connections(self, data: dict = None):
-        num = str(len(self.all_client_connections))
+        num = len(self.all_client_connections)
         if data is not None:
-            data['response'] = num
+            data['response'] = str(num)
             return data
         else:
             return num

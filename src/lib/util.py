@@ -56,7 +56,7 @@ def kill_thread(logger, thread):
                 logger('Killing thread ungracefully!')
                 thread._stop()
                 return
-        logger('Thread closed gracefully')
+        # logger('Thread closed gracefully')
     except AttributeError as e:
         logger(f'Thread is already closed?\n{e}')
     except RuntimeError as e:
