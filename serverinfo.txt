@@ -1,2 +1,2 @@
-Router IP: 24.163.53.64
-Router forwarded IP: 7.12.3.14
+Google host: 35.237.14.199:8888
+Connection type: Raw
