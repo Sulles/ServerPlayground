@@ -4,7 +4,8 @@ Main util file with miscellaneous common variables, functions, and classes
 
 from datetime import datetime
 
-MAX_QUEUE_SIZE = 5
+MAX_QUEUE_SIZE = 25
+MAX_SERVER_SIZE = 100
 
 
 def lockable(func):

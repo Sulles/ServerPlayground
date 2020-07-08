@@ -117,7 +117,7 @@ class Gateway(LogWorthy):
             # Try and get a new connection
             try:
                 (connection, (ip, port)) = self.connection_queue.get(timeout=600)
-                if self.server.get_num_connections() < 10:
+                if self.server.get_num_connections() < MAX_SERVER_SIZE:
                     self.log(f'Got new connection at {ip}:{port}')
                     self.server.handle_new_connection(connection, ip, port)
                 else:

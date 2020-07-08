@@ -8,6 +8,7 @@ It is responsible for:
 """
 
 import socket
+from queue import Full
 
 from src.lib.util import LogWorthy, kill_thread, lockable
 from . import Thread, sleep
@@ -121,6 +122,9 @@ class SocketThread(LogWorthy):
                     except socket.timeout:
                         # this.log('Socket timed out waiting for new connection!')
                         pass
+                    except Full:
+                        this.log('Connection is Queue is full! Waiting 1 sec to process all connections in queue...')
+                        sleep(1)
                     except Exception as e:
                         this.log('Got error while waiting for next connection!')
                         raise e
