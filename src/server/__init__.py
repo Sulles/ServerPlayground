@@ -7,8 +7,6 @@ from threading import Thread
 from time import time, sleep
 
 # noinspection PyUnresolvedReferences
-from .. import Queue
-# noinspection PyUnresolvedReferences
-from ..lib.util import MAX_QUEUE_SIZE
+from .. import Queue, MAX_QUEUE_SIZE
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))

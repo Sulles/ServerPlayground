@@ -9,6 +9,7 @@ It is responsible for:
 
 import socket
 
+from queue import Full
 from src.lib.util import LogWorthy, kill_thread, lockable
 from . import Thread, sleep
 from .. import RLock
@@ -121,9 +122,11 @@ class SocketThread(LogWorthy):
                     except socket.timeout:
                         # this.log('Socket timed out waiting for new connection!')
                         pass
+                    except Full:
+                        this.log('Connection queue full, sleeping to let queue get processed...')
+                        sleep(1)
                     except Exception as e:
-                        this.log('Got error while waiting for next connection!')
-                        raise e
+                        this.log(f'GOT UNHANDLED ERROR! while waiting for next connection:\n{e}')
                 else:
                     this.log('Listener was paused')
                     sleep(1)

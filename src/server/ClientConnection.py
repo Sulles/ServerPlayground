@@ -15,8 +15,7 @@ from threading import Thread
 from time import time, sleep
 
 from src.lib.util import LogWorthy, kill_thread, lockable
-from . import MAX_QUEUE_SIZE
-from .. import SECURE_SERVICE, INSECURE_SERVICE, RLock, Queue
+from .. import SECURE_SERVICE, INSECURE_SERVICE, RLock, Queue, MAX_QUEUE_SIZE
 
 
 class ClientConnection(LogWorthy):
@@ -57,12 +56,15 @@ class ClientConnection(LogWorthy):
         # Security
         self.is_secure = False  # If the client is using symmetric key encryption
         self.is_admin = False  # Client is using symmetric key encryption and has provided an admin password
-        self.client_timeout = 60 * 30     # 30 min timeout (in sec)
+        self.client_timeout = 60 * 15     # 30 min timeout (in sec)
 
         self.log('Successfully finished initialization')
 
     def panic(self, panic_info=None):
+        self.is_alive = False
+        self.kill_thread = True
         self.panic_call_back((self.name, panic_info))
+        sleep(1)
 
     """ === PROCESS START/STOP === """
 
@@ -73,21 +75,22 @@ class ClientConnection(LogWorthy):
             - Starting processor and listener thread
         """
         self.is_alive = True
+        self.kill_thread = False
 
-        self.listener = Thread(target=self.listen, args=(self, self.new_data.put_nowait, self.panic))
-        self.listener.start()
+        # Register services
+        SECURE_SERVICE.register_service(f'authorize_{self.name}', self.make_admin)
+
+        self.responder = Thread(target=self.respond, args=(self, self.response_data.get))
+        self.responder.start()
 
         self.processor = Thread(target=self.process_data, args=(self, self.new_data.get, self.panic,
                                                                 self.response_data.put_nowait))
         self.processor.start()
 
-        self.responder = Thread(target=self.respond, args=(self, self.response_data.get))
-        self.responder.start()
+        self.response_data.put('Welcome to the Playground!')
 
-        # Register services
-        SECURE_SERVICE.register_service(f'authorize_{self.name}', self.make_admin)
-
-        self.response_data.put_nowait('Welcome to the Playground!')
+        self.listener = Thread(target=self.listen, args=(self, self.new_data.put_nowait, self.panic))
+        self.listener.start()
 
     def stop(self):
         """
@@ -96,6 +99,10 @@ class ClientConnection(LogWorthy):
             - Closing socket connection to client
         """
         self.log('Stopping...')
+        try:
+            self.connection.sendall(str('LWT').encode('utf-8'))
+        except (ConnectionResetError, OSError):
+            self.log('LWT TRANSMISSION FAILED')
         SECURE_SERVICE.unregister_service(f'authorize_{self.name}')
         self.is_alive = False
         self.kill_thread = True
@@ -139,7 +146,6 @@ class ClientConnection(LogWorthy):
                                 empty_data_counter = -1
                                 # Got empty data too many times!
                                 panic()
-                                sleep(1)
                         else:
                             empty_data_counter = 0  # Reset empty data counter on valid data
                             timeout_counter = 0     # Reset timeout counter on valid data
@@ -147,20 +153,18 @@ class ClientConnection(LogWorthy):
                             process(data)
                     except AssertionError:
                         panic(f'{this.name} possible data corruption, self-terminating')
-                        sleep(1)
                     except Full:
                         panic(f'{this.name} data overflow, self-terminating')
-                        sleep(1)
                 except socket.timeout:
                     # this.log('Socket timed out waiting to receive new data')
                     timeout_counter += 1    # socket times out every 0.5s
                     if timeout_counter * 0.5 > this.client_timeout:
                         panic(f'{this.name} timeout reached, self-terminating')
-                        sleep(1)
                     pass
                 except ConnectionResetError:
                     panic(f'User at {this.name} terminated connection, shutting down...')
-                    sleep(1)
+                except WindowsError as e:
+                    panic(f'Potentially aborted connection:\n{e}')
                 except Exception as e:
                     this.log(f'Got error while getting data from client!\n{e}')
 
@@ -181,19 +185,16 @@ class ClientConnection(LogWorthy):
                     this.log(f'Processing raw data: {raw_data}')
                     data = this.build_data(this, raw_data)
                     try:
-                        if data['request'] == "GET":
-                            panic(f'{this.name} SENT "GET" REQUEST, POTENTIAL UNAUTHORIZED USER, self-terminating')
-                            sleep(1)
+                        if data['request'] == "GET" or data['request'] == "CONNECT":
+                            panic(f'KILLING CONNECTION TO POTENTIAL UNAUTHORIZED USER -> {this.name}')
                         elif this.is_secure or this.is_admin:
                             this.handle_secure_data(this, data, send_response, panic)
                         else:
                             this.handle_insecure_data(this, data, send_response, panic)
                     except AssertionError:
                         panic(f'{this.name} Response queue may have been closed! Lost data: {data}. Self-terminating')
-                        sleep(1)
                     except Full:
                         panic(f'{this.name} Response data queue overflow! Self-terminating')
-                        sleep(1)
                 except Empty:
                     # this.log('Got no data, passing')
                     pass

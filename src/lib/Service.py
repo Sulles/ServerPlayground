@@ -34,9 +34,8 @@ Chaining services is feasible and the data dictionary from a previous service ca
 
 """
 
-from src.server import MAX_QUEUE_SIZE
+from .. import Queue, RLock, MAX_QUEUE_SIZE
 from .util import LogWorthy, lockable
-from .. import Queue, RLock
 
 
 class Service(LogWorthy):
@@ -61,8 +60,11 @@ class Service(LogWorthy):
 
     @lockable
     def unregister_service(self, service_name: str):
-        self.log(f'Unregistering endpoint: {service_name}')
-        del self.services[service_name]
+        try:
+            self.log(f'Unregistering endpoint: {service_name}')
+            del self.services[service_name]
+        except KeyError:
+            pass
 
     # @lockable
     # def create_oneshot(self, oneshot_name, call_back):

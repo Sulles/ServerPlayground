@@ -100,12 +100,7 @@ class Server(LogWorthy):
                         this.log(f'GOT PANIC INFO: {panic_info}')
                     for conn in this.all_client_connections:
                         if conn.name == kill_name:
-                            kill_id = this.all_client_connections.index(conn)
-                            conn.stop()
-                            this.log(f'Successfully killed {conn.name}!')
-                    if kill_id is not None:
-                        this.all_client_connections.pop(kill_id)
-                        this.debug(f'Removed {kill_name} from all client connections')
+                            this._kill_client(conn)
                 except Empty:
                     pass
                 except AttributeError as e:
@@ -235,9 +230,11 @@ class Server(LogWorthy):
 
     def _kill_client(self, client):
         with self.kill_lock:  # use special lock for this for lock certainty
-            self.log(f'Killing client connection {client.name}')
-            self.all_client_connections.remove(client)
-            client.cleanup()
+            try:
+                client.cleanup()
+                self.all_client_connections.remove(client)
+            except ValueError:
+                self.log(f'Killed client connection {client.name}')
 
     @lockable
     def kill_connection(self, data: dict):

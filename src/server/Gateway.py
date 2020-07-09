@@ -18,7 +18,7 @@ from src.lib.util import *
 from . import time
 from .Server import Server
 from .SocketThread import SocketThread
-from .. import Queue, SECURE_SERVICE, INSECURE_SERVICE, RLock
+from .. import Queue, SECURE_SERVICE, INSECURE_SERVICE, MAX_QUEUE_SIZE, SERVER_MAX_POP, RLock
 
 
 class Gateway(LogWorthy):
@@ -43,7 +43,6 @@ class Gateway(LogWorthy):
         LogWorthy.__init__(self, log_file)
         self.name = 'Gateway'
         self.is_running = True
-        self.connection_backlog_size = 5
         self.socket_timeout = 0.1
         self.lock = RLock()
 
@@ -52,7 +51,7 @@ class Gateway(LogWorthy):
         self.ip_port = 8888
 
         # Threading
-        self.connection_queue = Queue(self.connection_backlog_size)
+        self.connection_queue = Queue(MAX_QUEUE_SIZE)
         self.socket_thread = SocketThread(log_file, self.connection_queue.put_nowait)
         self.log('Socket initialized')
 
@@ -117,7 +116,7 @@ class Gateway(LogWorthy):
             # Try and get a new connection
             try:
                 (connection, (ip, port)) = self.connection_queue.get(timeout=600)
-                if self.server.get_num_connections() < 10:
+                if self.server.get_num_connections() < SERVER_MAX_POP:
                     self.log(f'Got new connection at {ip}:{port}')
                     self.server.handle_new_connection(connection, ip, port)
                 else:
@@ -128,7 +127,6 @@ class Gateway(LogWorthy):
             except Exception as e:
                 self.log('CRITICAL ERROR 1: Failed to get new connection from connection_queue!')
                 self.log(e)
-                raise e
 
             # self.log('Sleeping for a hot second')
             self.log('.')
