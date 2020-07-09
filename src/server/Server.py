@@ -95,7 +95,7 @@ class Server(LogWorthy):
                 try:
                     kill_name, panic_info = get_next_panic(timeout=1)
                     kill_id = None
-                    this.log(f'Got kill request for {kill_name}')
+                    this.log('Got kill request!')
                     if panic_info is not None:
                         this.log(f'GOT PANIC INFO: {panic_info}')
                     for conn in this.all_client_connections:
@@ -104,7 +104,7 @@ class Server(LogWorthy):
                             conn.stop()
                             this.log(f'Successfully killed {conn.name}!')
                     if kill_id is not None:
-                        del this.all_client_connections[kill_id]
+                        this.all_client_connections.pop(kill_id)
                         this.debug(f'Removed {kill_name} from all client connections')
                 except Empty:
                     pass
@@ -267,11 +267,14 @@ class Server(LogWorthy):
 
     @lockable
     def kill_all_connections_except_me(self, data: dict):
-        client_address = data['client_id']
+        client_address = data['data']
         for client in copy(self.all_client_connections):
             if client.name != client_address:
                 self._kill_client(client)
-        data['response'] = f'Client {data["client_id"]} killed all connections except themself'
+        if 'client_id' in data.keys():
+            data['response'] = f'Client {data["client_id"]} killed all connections EXCEPT: {client_address}'
+        else:
+            data['response'] = f'Killed all connections EXCEPT: {client_address}!'
         return data
 
     def re_init(self):

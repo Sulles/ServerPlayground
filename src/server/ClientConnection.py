@@ -57,15 +57,12 @@ class ClientConnection(LogWorthy):
         # Security
         self.is_secure = False  # If the client is using symmetric key encryption
         self.is_admin = False  # Client is using symmetric key encryption and has provided an admin password
-        self.client_timeout = 60 * 30  # 30 min timeout (in sec)
+        self.client_timeout = 60 * 30     # 30 min timeout (in sec)
 
         self.log('Successfully finished initialization')
 
     def panic(self, panic_info=None):
-        if self.is_alive:  # avoid duplicate panics if not alive (aka shutting down)
-            self.panic_call_back((self.name, panic_info))
-        else:
-            sleep(60)  # if not alive, sleep until object can be killed
+        self.panic_call_back((self.name, panic_info))
 
     """ === PROCESS START/STOP === """
 
@@ -99,9 +96,9 @@ class ClientConnection(LogWorthy):
             - Closing socket connection to client
         """
         self.log('Stopping...')
+        SECURE_SERVICE.unregister_service(f'authorize_{self.name}')
         self.is_alive = False
         self.kill_thread = True
-        SECURE_SERVICE.unregister_service(f'authorize_{self.name}')
         self.new_data.close()
         self.response_data.close()
         kill_thread(self.log, self.listener)
@@ -145,7 +142,7 @@ class ClientConnection(LogWorthy):
                                 sleep(1)
                         else:
                             empty_data_counter = 0  # Reset empty data counter on valid data
-                            timeout_counter = 0  # Reset timeout counter on valid data
+                            timeout_counter = 0     # Reset timeout counter on valid data
                             this.debug(f'Got data: {data}')
                             process(data)
                     except AssertionError:
@@ -156,7 +153,7 @@ class ClientConnection(LogWorthy):
                         sleep(1)
                 except socket.timeout:
                     # this.log('Socket timed out waiting to receive new data')
-                    timeout_counter += 1  # socket times out every 0.5s
+                    timeout_counter += 1    # socket times out every 0.5s
                     if timeout_counter * 0.5 > this.client_timeout:
                         panic(f'{this.name} timeout reached, self-terminating')
                         sleep(1)
@@ -184,8 +181,8 @@ class ClientConnection(LogWorthy):
                     this.log(f'Processing raw data: {raw_data}')
                     data = this.build_data(this, raw_data)
                     try:
-                        if data['request'] == "GET" or data['request'] == "CONNECT":
-                            panic(f'KILLING CONNECTION TO POTENTIAL UNAUTHORIZED USER -> {this.name}')
+                        if data['request'] == "GET":
+                            panic(f'{this.name} SENT "GET" REQUEST, POTENTIAL UNAUTHORIZED USER, self-terminating')
                             sleep(1)
                         elif this.is_secure or this.is_admin:
                             this.handle_secure_data(this, data, send_response, panic)
