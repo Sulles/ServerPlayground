@@ -264,14 +264,13 @@ class Server(LogWorthy):
 
     @lockable
     def kill_all_connections_except_me(self, data: dict):
-        client_address = data['data']
+        client_address = data['client_id']
+        killed_clients = list()
         for client in copy(self.all_client_connections):
             if client.name != client_address:
+                killed_clients.append(client.name)
                 self._kill_client(client)
-        if 'client_id' in data.keys():
-            data['response'] = f'Client {data["client_id"]} killed all connections EXCEPT: {client_address}'
-        else:
-            data['response'] = f'Killed all connections EXCEPT: {client_address}!'
+        data['response'] = f'Client {data["client_id"]} killed all connections: {killed_clients}'
         return data
 
     def re_init(self):
