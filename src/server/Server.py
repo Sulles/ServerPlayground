@@ -11,10 +11,11 @@ import hashlib
 from copy import copy
 from queue import Empty
 
+from src.lib.rsa import *
 from src.lib.util import *
+from . import Queue, RLock, INSECURE_SERVICE, SECURE_SERVICE, ADMIN_SERVICE
 from . import Thread, sleep
 from .ClientConnection import ClientConnection
-from .. import Queue, RLock, INSECURE_SERVICE, SECURE_SERVICE
 
 # ==================
 # TESTING PLAYGROUND
@@ -52,6 +53,7 @@ class Server(LogWorthy):
                 self.log(f'CRITICAL ERROR -1: Could not read admin password!\n{e}')
 
         # Security - Session RSA keys
+        self.private_key = PrivateKey()
 
         # SQL
         self.sql = None
@@ -69,15 +71,12 @@ class Server(LogWorthy):
         self.connection_watcher = None
         self.start_watchdog()
 
-        # Client Connection Insecure Requests thread
-        self.kill_request = False
-        self.request_is_alive = True
-        self.request_refresh = 0.5  # frequency that request handler checks if a new insecure request exists
-        self.request_sleep = 1  # frequency that request handler checks if it should be running
-        INSECURE_SERVICE.register_service('verify_admin_pwd', self.verify_admin_password)
+        # Client Connection Unregistered Services Request thread
         INSECURE_SERVICE.register_service('auth_challenge', self.handle_auth_challenge)
-        # Client Connection Secure Requests
-        SECURE_SERVICE.register_service('list_all_connections', self.list_all_connections)
+        # Client Connection Registered Services Request thread
+        SECURE_SERVICE.register_service('verify_admin_pwd', self.verify_admin_password)
+        # Client Connection Secure Services Requests thread
+        ADMIN_SERVICE.register_service('list_all_connections', self.list_all_connections)
 
     """ === THREADS === """
 
@@ -127,7 +126,7 @@ class Server(LogWorthy):
         if success:
             self.log(f'Attempting to authorize client: {data["client_id"]}')
             authorize_request = dict(client_id=self.name, request=f'authorize_{data["client_id"]}', data=None)
-            authorize_response = SECURE_SERVICE.handle(authorize_request)
+            authorize_response = ADMIN_SERVICE.handle(authorize_request)
             data['previous_services'] = [authorize_response]
             data['response'] = authorize_response['response']
             return data
@@ -136,9 +135,11 @@ class Server(LogWorthy):
             return data
 
     @lockable
-    def handle_auth_challenge(self, args):
+    def handle_auth_challenge(self, data):
         """ Start authorization challenge """
-        self.log(f'Received authorization challenge: {args}')
+        self.log(f'Received authorization challenge from: {data["client_id"]}')
+        data['response'] = self.private_key.get_public_key()
+        return data
 
     """ === HANDLERS === """
 

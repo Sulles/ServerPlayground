@@ -15,7 +15,7 @@ from threading import Thread
 from time import time, sleep
 
 from src.lib.util import LogWorthy, kill_thread, lockable
-from .. import SECURE_SERVICE, INSECURE_SERVICE, RLock, Queue, MAX_QUEUE_SIZE
+from . import INSECURE_SERVICE, SECURE_SERVICE, ADMIN_SERVICE, RLock, Queue
 
 
 class ClientConnection(LogWorthy):
@@ -44,17 +44,17 @@ class ClientConnection(LogWorthy):
         self.kill_thread = False
         self.is_alive = True
         self.listener = None
-        self.new_data = Queue(MAX_QUEUE_SIZE)
+        self.new_data = Queue(5)
         self.processor = None
-        self.response_data = Queue(MAX_QUEUE_SIZE)
+        self.response_data = Queue(5)
         self.responder = None
 
         # Client request handling
-        self.global_request_timeout = 4
-        self.expected_data_pipe = None
+        self.expected_data_call_back = None
 
         # Security
         self.is_secure = False  # If the client is using symmetric key encryption
+        self.is_logged_in = False   # If the client has logged in
         self.is_admin = False  # Client is using symmetric key encryption and has provided an admin password
         self.client_timeout = 60 * 15     # 30 min timeout (in sec)
 
@@ -64,7 +64,7 @@ class ClientConnection(LogWorthy):
         self.is_alive = False
         self.kill_thread = True
         self.panic_call_back((self.name, panic_info))
-        sleep(1)
+        sleep(0.5)
 
     """ === PROCESS START/STOP === """
 
@@ -78,7 +78,7 @@ class ClientConnection(LogWorthy):
         self.kill_thread = False
 
         # Register services
-        SECURE_SERVICE.register_service(f'authorize_{self.name}', self.make_admin)
+        ADMIN_SERVICE.register_service(f'authorize_{self.name}', self.make_admin)
 
         self.responder = Thread(target=self.respond, args=(self, self.response_data.get))
         self.responder.start()
@@ -103,7 +103,7 @@ class ClientConnection(LogWorthy):
             self.connection.sendall(str('LWT').encode('utf-8'))
         except (ConnectionResetError, OSError):
             self.log('LWT TRANSMISSION FAILED')
-        SECURE_SERVICE.unregister_service(f'authorize_{self.name}')
+        ADMIN_SERVICE.unregister_service(f'authorize_{self.name}')
         self.is_alive = False
         self.kill_thread = True
         self.new_data.close()
@@ -120,7 +120,6 @@ class ClientConnection(LogWorthy):
 
     @staticmethod
     def listen(this, process, panic):
-        # def listen(this, call_back, response, panic):
         """
         Listener thread for ClientConnection, is responsible for:
             - Waiting for new data from client
@@ -146,12 +145,14 @@ class ClientConnection(LogWorthy):
                                 empty_data_counter = -1
                                 # Got empty data too many times!
                                 panic()
+                            else:
+                                process(data)
                         else:
                             empty_data_counter = 0  # Reset empty data counter on valid data
                             timeout_counter = 0     # Reset timeout counter on valid data
                             this.debug(f'Got data: {data}')
                             process(data)
-                    except AssertionError:
+                    except (AssertionError, UnicodeDecodeError):
                         panic(f'{this.name} possible data corruption, self-terminating')
                     except Full:
                         panic(f'{this.name} data overflow, self-terminating')
@@ -163,7 +164,7 @@ class ClientConnection(LogWorthy):
                     pass
                 except ConnectionResetError:
                     panic(f'User at {this.name} terminated connection, shutting down...')
-                except WindowsError as e:
+                except OSError as e:
                     panic(f'Potentially aborted connection:\n{e}')
                 except Exception as e:
                     this.log(f'Got error while getting data from client!\n{e}')
@@ -185,16 +186,20 @@ class ClientConnection(LogWorthy):
                     this.log(f'Processing raw data: {raw_data}')
                     data = this.build_data(this, raw_data)
                     try:
-                        if data['request'] == "GET" or data['request'] == "CONNECT":
+                        if this.expected_data_call_back is not None:
+                            this.handle_expected_data(data, send_response)
+                        elif data['request'] == "GET" or data['request'] == "CONNECT":
                             panic(f'KILLING CONNECTION TO POTENTIAL UNAUTHORIZED USER -> {this.name}')
                         elif this.is_secure or this.is_admin:
                             this.handle_secure_data(this, data, send_response, panic)
                         else:
                             this.handle_insecure_data(this, data, send_response, panic)
-                    except AssertionError:
-                        panic(f'{this.name} Response queue may have been closed! Lost data: {data}. Self-terminating')
-                    except Full:
-                        panic(f'{this.name} Response data queue overflow! Self-terminating')
+                    except AssertionError as e:
+                        panic(f'{this.name} Response queue may have been closed! Lost data: {data}. '
+                              f'Self-terminating with error:\n{e}')
+                    except Full as e:
+                        panic(f'{this.name} Response data queue overflow! '
+                              f'Self-terminating with error:\n{e}')
                 except Empty:
                     # this.log('Got no data, passing')
                     pass
@@ -202,8 +207,7 @@ class ClientConnection(LogWorthy):
                     this.log('Thread is dying!')
                     exit(0)
                 except Exception as e:
-                    this.log('Got error while processing user data!')
-                    this.log(e)
+                    this.log(f'Got error while processing user data:\n{e}')
                     send_response('ERROR CC_3.0: Unknown Error')
 
     @staticmethod
@@ -234,7 +238,6 @@ class ClientConnection(LogWorthy):
         this.debug(f'Insecurely processing {data}')
         # Handle kill request
         if this.handle_exit(this, data['request'], send_response, panic):
-            sleep(1)
             return
 
         # Handle internal requests
@@ -245,7 +248,7 @@ class ClientConnection(LogWorthy):
         except ValueError:
             send_response("ERROR CC_1: Internal response data invalid")
         except Exception as e:
-            this.log(f'ERROR CC_2: Unexpected transmission error: {e}')
+            this.log(f'ERROR CC_2: Unexpected transmission error:\n{e}')
 
     @staticmethod
     def handle_secure_data(this, data, send_response, panic):
@@ -262,7 +265,17 @@ class ClientConnection(LogWorthy):
         except ValueError:
             send_response("ERROR CC_1: Internal response data invalid")
         except Exception as e:
-            this.log(f'ERROR CC_2: Unexpected transmission error: {e}')
+            this.log(f'ERROR CC_2: Unexpected transmission error:\n{e}')
+
+    @staticmethod
+    def handle_expected_data(this, data, send_response):
+        try:
+            this.log(f'Passing data to expected end point: {data}')
+            response = this.expected_data_call_back(data)
+            this.log(f'Got response: {response}')
+            send_response(response)
+        except Exception as e:
+            this.log(f'GOT ERROR HANDLING EXPECTED DATA:\n{e}')
 
     @staticmethod
     def respond(this, next_response):
@@ -274,14 +287,13 @@ class ClientConnection(LogWorthy):
                         response = str(response)
                     this.debug(f'Trying to send response: {response}')
                     [this.connection.sendall(str(r + '\r\n').encode('utf-8')) for r in response.splitlines()]
-                    this.connection.sendall(str('>> ').encode('utf-8'))
+                    # this.connection.sendall(str('>> ').encode('utf-8'))
                 except Empty:
                     pass
                 except OSError:
                     this.log('Socket connection has been closed!')
                 except Exception as e:
-                    this.log('Got error while trying to transmit data')
-                    this.log(e)
+                    this.log(f'Got error while trying to transmit data:\n{e}')
 
     """ === SERVICES === """
 

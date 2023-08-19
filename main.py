@@ -2,10 +2,17 @@
 Main file that should be called to run the server.
 """
 
+import cProfile
+import io
+from pstats import SortKey, Stats
+
 from src.server.Gateway import Gateway
 
 if __name__ == "__main__":
     print('Start')
+
+    # pr = cProfile.Profile()
+    # pr.enable()
 
     gateway = Gateway()
     try:
@@ -19,6 +26,13 @@ if __name__ == "__main__":
 
     finally:
         gateway.cleanup()
+
+        # pr.disable()
+        # s = io.StringIO()
+        # sortby = SortKey.CUMULATIVE
+        # ps = Stats(pr, stream=s).sort_stats(sortby)
+        # ps.print_stats()
+        # print(s.getvalue())
 
         print('Fin')
         exit()

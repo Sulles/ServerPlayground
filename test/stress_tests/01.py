@@ -17,6 +17,7 @@ kill_time = time() + 25
 def toggle_tcp_connection():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect(('192.168.1.78', 8888))
+    # client.connect(('35.237.14.199', 8888))
     client.settimeout(timeout_time)
     sleep(kill_time - time() + randint(1, 100)/100)
     client.send('exit'.encode('utf-8'))

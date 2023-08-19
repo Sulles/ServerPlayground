@@ -38,10 +38,13 @@ class LogWorthy(object):
         self._debug(log)
 
     def _debug(self, log):
-        if self.file_name is not None:
+        if self.log_file is not None:
             log = f'[{datetime.now()}] {log}'
             with self.log_file:
                 self.log_file.writelines('\n' + log)
+
+    # def __del__(self):
+    #     self.log_file.close()
 
 
 def kill_thread(logger, thread):

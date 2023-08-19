@@ -23,9 +23,9 @@ class PublicKey(object):
     def __init__(self, raw_data):
         try:
             # Try to parse data
-            parsed_data = findall(r"(n{.*})(e{.*})", raw_data)[0]
-            n = parsed_data[0]
-            e = parsed_data[1]
+            # parsed_data = findall(r"(n{.*})(e{.*})", raw_data)[0]
+            n = raw_data[0]
+            e = raw_data[1]
             print('Parsed raw data successfully')
 
             self.rsa = RSA.construct((n, e))
@@ -38,34 +38,13 @@ class PublicKey(object):
             print('CRITICAL ERROR: Could not resolve public key from raw data!')
             raise e
 
-    def encrypt(self, msg):
+    def encrypt(self, msg: str):
         """
         This method will encrypt a message using the public key and can only be decrypted by the private key
         :param msg: String plain-text message
         :return: bytestream of the encrypted message
         """
-        try:
-            return self.cipher.encrypt(msg.encode('utf-8'))
-        except AttributeError or UnicodeEncodeError:
-            print('WARNING: Could not encode message, encrypting raw data!')
-            return self.cipher.encrypt(msg)
-
-    def decrypt(self, msg):
-        """
-        TODO: THIS DOES NOT WORK!!
-        This method will decrypt a message using the public key. It is meant to decode messages that were encrypted
-            using the private key.
-        :param msg: Encrypted bytestream
-        :return: Plain-text message
-        """
-        raise NotImplementedError
-        # decrypted = None
-        # try:
-        #     decrypted = self.cipher.decrypt(msg)
-        #     return decrypted.decode('utf-8')
-        # except AttributeError or UnicodeDecodeError:
-        #     print('WARNING: Could not decode message, returning raw data!')
-        #     return decrypted
+        return self.cipher.encrypt(msg.encode('utf-8'))
 
 
 class PrivateKey(object):
@@ -81,6 +60,8 @@ class PrivateKey(object):
 
         print('Generating new RSA keys...')
         self.rsa = RSA.generate(self.bit_level, e=self.e)
+        print(f'n: {self.rsa.n}')
+        print(f'e: {self.rsa.e}')
         # rsa_components (tuple):
         #     A tuple of integers, with at least 2 and no
         #     more than 6 items. The items come in the following order:
@@ -102,46 +83,49 @@ class PrivateKey(object):
 
         print('Private Key generated!')
 
-    def public_encrypt(self, msg):
-        """
-        This method will encrypt a message using the public key and can only be decrypted by the private key
-        :param msg: String plain-text message
-        :return: bytestream of the encrypted message
-        """
-        try:
-            return self.cipher.encrypt(msg.encode('utf-8'))
-        except AttributeError or UnicodeEncodeError:
-            print('WARNING: Could not encode message, encrypting raw data!')
-            return self.cipher.encrypt(msg)
+    def get_public_key(self):
+        return [self.neg_rsa.n, self.neg_rsa.e]
 
-    def private_encrypt(self, msg):
-        """
-        This method will encrypt a message using the private key and can only be decrypted by the public key
-        :param msg: String plain-text message
-        :return: bytestream of the encrypted message
-        """
-        try:
-            return self.neg_cipher.encrypt(msg.encode('utf-8'))
-        except AttributeError or UnicodeEncodeError:
-            print('WARNING: Could not encode message, encrypting raw data!')
-            return self.neg_cipher.encrypt(msg)
+    # def _encrypt(self, msg):
+    #     """
+    #     This method will encrypt a message using the public key and can only be decrypted by the private key
+    #     :param msg: String plain-text message
+    #     :return: bytestream of the encrypted message
+    #     """
+    #     try:
+    #         return self.cipher.encrypt(msg.encode('utf-8'))
+    #     except AttributeError or UnicodeEncodeError:
+    #         print('WARNING: Could not encode message, encrypting raw data!')
+    #         return self.cipher.encrypt(msg)
+    #
+    # def private_encrypt(self, msg):
+    #     """
+    #     This method will encrypt a message using the private key and can only be decrypted by the public key
+    #     :param msg: String plain-text message
+    #     :return: bytestream of the encrypted message
+    #     """
+    #     try:
+    #         return self.neg_cipher.encrypt(msg.encode('utf-8'))
+    #     except AttributeError or UnicodeEncodeError:
+    #         print('WARNING: Could not encode message, encrypting raw data!')
+    #         return self.neg_cipher.encrypt(msg)
+    #
+    # def private_decrypt(self, msg):
+    #     """
+    #     This method will decrypt a message using the private key. It is meant to decode messages that were encrypted
+    #         using the public key.
+    #     :param msg: Encrypted bytestream
+    #     :return: Plain-text message
+    #     """
+    #     decrypted = None
+    #     try:
+    #         decrypted = self.cipher.decrypt(msg)
+    #         return decrypted.decode('utf-8')
+    #     except AttributeError or UnicodeDecodeError:
+    #         print('WARNING: Could not decode message, returning raw data!')
+    #         return decrypted
 
-    def private_decrypt(self, msg):
-        """
-        This method will decrypt a message using the private key. It is meant to decode messages that were encrypted
-            using the public key.
-        :param msg: Encrypted bytestream
-        :return: Plain-text message
-        """
-        decrypted = None
-        try:
-            decrypted = self.cipher.decrypt(msg)
-            return decrypted.decode('utf-8')
-        except AttributeError or UnicodeDecodeError:
-            print('WARNING: Could not decode message, returning raw data!')
-            return decrypted
-
-    def public_decrypt(self, msg):
+    def decrypt(self, msg):
         """
         This method will decrypt a message using the public key. It is meant to decode messages that were encrypted
             using the private key.

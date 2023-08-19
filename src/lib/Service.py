@@ -10,8 +10,9 @@ Both objects, InsecureService and SecureService are initialized in src.__init__ 
 
 === Service Architecture ===
 Services work as a data-forwarding system where data in the form of a dictionary is passed to a callback function
-__WARNING__: call_back functions should be mutex protected to prevent multiple simultaneous access requests by different
-    users.
+
+    !!!WARNING!!!
+    Call_back functions should be mutex protected to prevent multiple simultaneous access requests by different users.
 
 Data passed to a Service object must be a Dictionary and have the following keys: request, data.
     Optional keys: client_id, command_id
@@ -34,8 +35,9 @@ Chaining services is feasible and the data dictionary from a previous service ca
 
 """
 
-from .. import Queue, RLock, MAX_QUEUE_SIZE
+from . import Queue, RLock
 from .util import LogWorthy, lockable
+from ..server import MAX_QUEUE_SIZE
 
 
 class Service(LogWorthy):
@@ -81,6 +83,10 @@ class Service(LogWorthy):
     @lockable
     def _handle(self, data: dict = None):
         self.debug('Got into handler...')
+        if data is None or type(data) is not dict:
+            self.log(f'Invalid service data, got: {data} of type: {type(data)}')
+            return data
+
         if 'request' not in data.keys() or 'data' not in data.keys():
             data['response'] = 'ERROR: Service request dictionary must have "request" and "data" fields'
             return data
@@ -127,7 +133,7 @@ class Service(LogWorthy):
         help_data += 'Available services:\n'
         for _ in self.services.keys():
             help_data += f'\t{_}\n'
-        help_data += f'\texit\n'    # Exit handled by ClientConnection object
+        help_data += f'\texit\n'  # Exit handled by ClientConnection object
         help_data += '\n'
         help_data += 'Commands are space delimited\n'
         help_data += 'I.e. "echo hello world", "echo" is the service name,\n' \
@@ -144,49 +150,49 @@ class Service(LogWorthy):
         self._debug(f'[{self.name}] {log}')
 
 
-class SecureService(Service):
-    """ Secure Service object that houses all secure services """
-
-    def __init__(self, file_name: str = None):
-        self.name = "SecureService"
-        Service.__init__(self, self.name, file_name)
-
-    def handle(self, data: dict = None):
-        if data is None or type(data) is not dict:
-            self.log(f'Invalid service data, got: {data} of type: {type(data)}')
-            return
-        self.debug(f'Handling {data}')
-        return self._handle(data)
-        # if ' ' in data:
-        #     request_type, request_data = data.split(' ', 1)
-        #     if request_type not in self.services.keys():
-        #         self.log(f'Got invalid insecure service request: "{request_type}", returning "invalid request"')
-        #         return 'Error: Invalid request type, try "help"'
-        #     else:
-        #         return self._handle(data)
-        # else:
-        #     return self._handle(data)
-
-
 class InsecureService(Service):
-    """ Insecure Service object that houses all insecure services """
+    """ Insecure Service object that houses all insecure services for users who do not have a login """
 
-    def __init__(self, file_name=None):
-        self.name = "InsecureService"
+    def __init__(self, name: str = None, file_name: str = None):
+        self.name = "InsecureService" if name is None else name
         Service.__init__(self, self.name, file_name)
 
     def handle(self, data):
-        if data is None or type(data) is not dict:
-            self.log(f'Invalid service data, got: {data} of type: {type(data)}')
-            return
-        self.debug(f'Handling {data}')
+        self.debug(f'Handling data: {data}')
         return self._handle(data)
-        # if ' ' in data:
-        #     request_type, request_data = data.split(' ', 1)
-        #     if request_type not in self.services.keys():
-        #         self.log(f'Got invalid insecure service request: "{request_type}", returning "invalid request"')
-        #         return 'Error: Invalid request type, try "help"'
-        #     else:
-        #         return self._handle(data)
-        # else:
-        #     return self._handle(data)
+
+
+class SecureService(InsecureService):
+    """ Secure Service object that houses services available to users who have successfully provided an RSA key """
+
+    def __init__(self, name: str = None, file_name: str = None):
+        self.name = "SecureService" if name is None else name
+        InsecureService.__init__(self, self.name, file_name)
+
+    def handle(self, data: dict = None):
+        self.debug(f'Handling data: {data}')
+        return self._handle(data)
+
+
+class RegisteredService(SecureService):
+    """ Registered Service object that houses services to users who have provided a username and password """
+
+    def __init__(self, name: str = None, file_name: str = None):
+        self.name = "RegisteredService" if name is None else name
+        SecureService.__init__(self, self.name, file_name)
+
+    def handle(self, data: dict = None):
+        self.debug(f'Handling data: {data}')
+        return self._handle(data)
+
+
+class AdminService(RegisteredService):
+    """ Secure Service object that houses all secure services for admins """
+
+    def __init__(self, name: str = None, file_name: str = None):
+        self.name = "SecureService" if name is None else name
+        RegisteredService.__init__(self, self.name, file_name)
+
+    def handle(self, data: dict = None):
+        self.debug(f'Handling data: {data}')
+        return self._handle(data)

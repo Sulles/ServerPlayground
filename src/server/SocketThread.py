@@ -8,11 +8,10 @@ It is responsible for:
 """
 
 import socket
-
 from queue import Full
+
 from src.lib.util import LogWorthy, kill_thread, lockable
-from . import Thread, sleep
-from .. import RLock
+from . import Thread, sleep, RLock
 
 
 class SocketThread(LogWorthy):

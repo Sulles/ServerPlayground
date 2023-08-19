@@ -15,10 +15,9 @@ Command:
 from queue import Empty
 
 from src.lib.util import *
-from . import time
+from . import time, Queue, ADMIN_SERVICE, SECURE_SERVICE, MAX_QUEUE_SIZE, SERVER_MAX_POP, RLock
 from .Server import Server
 from .SocketThread import SocketThread
-from .. import Queue, SECURE_SERVICE, INSECURE_SERVICE, MAX_QUEUE_SIZE, SERVER_MAX_POP, RLock
 
 
 class Gateway(LogWorthy):
@@ -62,21 +61,21 @@ class Gateway(LogWorthy):
         # CLI connection
         self.cli_connection = None
         # Secure Service
-        SECURE_SERVICE.register_service('gateway_stop_listener', self.stop_socket_thread)
-        SECURE_SERVICE.register_service('gateway_start_listener', self.start_socket_thread)
-        SECURE_SERVICE.register_service('gateway_restart_listener', self.socket_thread.restart)
-        SECURE_SERVICE.register_service('gateway_status', self.get_status)
-        SECURE_SERVICE.register_service('server_status', self.get_server_status)
-        SECURE_SERVICE.register_service('server_kill_connection', self.server.kill_connection)
-        SECURE_SERVICE.register_service('server_kill_all_connections', self.server.kill_all_connections)
-        SECURE_SERVICE.register_service('server_kill_all_connections_except_me',
-                                        self.server.kill_all_connections_except_me)
-        SECURE_SERVICE.register_service('server_kill_watchdog', self.server.kill_watchdog_thread)
-        SECURE_SERVICE.register_service('server_start_watchdog', self.server.start_watchdog)
-        SECURE_SERVICE.register_service('server_restart_watchdog', self.server.restart_watchdog_thread)
+        ADMIN_SERVICE.register_service('gateway_stop_listener', self.stop_socket_thread)
+        ADMIN_SERVICE.register_service('gateway_start_listener', self.start_socket_thread)
+        ADMIN_SERVICE.register_service('gateway_restart_listener', self.socket_thread.restart)
+        ADMIN_SERVICE.register_service('gateway_status', self.get_status)
+        ADMIN_SERVICE.register_service('server_status', self.get_server_status)
+        ADMIN_SERVICE.register_service('server_kill_connection', self.server.kill_connection)
+        ADMIN_SERVICE.register_service('server_kill_all_connections', self.server.kill_all_connections)
+        ADMIN_SERVICE.register_service('server_kill_all_connections_except_me',
+                                       self.server.kill_all_connections_except_me)
+        ADMIN_SERVICE.register_service('server_kill_watchdog', self.server.kill_watchdog_thread)
+        ADMIN_SERVICE.register_service('server_start_watchdog', self.server.start_watchdog)
+        ADMIN_SERVICE.register_service('server_restart_watchdog', self.server.restart_watchdog_thread)
+        ADMIN_SERVICE.register_service('num_of_connections', self.server.get_num_connections)
+        # Registered service
         SECURE_SERVICE.register_service('num_of_connections', self.server.get_num_connections)
-        # Insecure Service
-        INSECURE_SERVICE.register_service('num_of_connections', self.server.get_num_connections)
 
     """ === LISTENER START/STOP === """
 
